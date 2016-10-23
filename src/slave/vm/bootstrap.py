@@ -61,10 +61,10 @@ class LogAccumulator(logging.Handler):
 	def __init__(self):
 		super(self.__class__, self).__init__()
 		self.records = []
-	
+
 	def emit(self, record):
 		self.records.append(record)
-	
+
 	def get_records(self):
 		formatter = logging.Formatter('%(asctime)s %(levelname)s:%(name)s:%(message)s')
 		res = []
@@ -82,13 +82,15 @@ class HostComms(threading.Thread):
 		while True:
 			self._my_ip = socket.gethostbyname(socket.gethostname())
 			if self._my_ip.startswith("127.0"):
-				p = subprocess.Popen(["ifconfig", "eth0"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+				p = subprocess.Popen(["ifconfig"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 				stdout,stderr = p.communicate()
 				for line in stdout.split("\n"):
 					if "inet addr:" in line:
 						match = re.match(r'^\s*inet addr:(\d+\.\d+\.\d+\.\d+).*$', line)
-						self._my_ip = match.group(1)
-						break
+						matchedIP = match.group(1)
+						if matchedIP.startswith("192.168.123."):
+							self._my_ip = matchedIP
+							break
 
 			if not self._my_ip.startswith("192.168.123."):
 				self._log.debug("we don't have an ip address yet (currently '{}')".format(self._my_ip))
@@ -116,7 +118,7 @@ class HostComms(threading.Thread):
 		self._recv_callback = recv_callback
 
 		self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	
+
 	def run(self):
 		self._log.info("running")
 		self._running.set()
@@ -141,11 +143,11 @@ class HostComms(threading.Thread):
 			time.sleep(0.1)
 
 		self._log.info("finished")
-	
+
 	def stop(self):
 		self._log.info("stopping")
 		self._running.clear()
-	
+
 	def send_msg(self, type, data):
 		data = json.dumps({
 				"job": self._job_id,
@@ -176,7 +178,7 @@ class HostComms(threading.Thread):
 class TalusCodeImporter(object):
 	"""This class will dynamically import tools and components from the
 	talus git repository.
-	
+
 	This class *should* conform to "pep-302":https://www.python.org/dev/peps/pep-0302/
 	"""
 
@@ -230,7 +232,7 @@ class TalusCodeImporter(object):
 
 		pypi_items = self._git_show("talus/pypi/simple")["items"]
 		self.cache["pypi"] = dict(map(lambda x: (x.replace("/", ""), True), filter(dir_check, pypi_items)))
-	
+
 	def find_module(self, abs_name, path=None):
 		"""Normally, a finder object would return a loader that can load the module.
 		In our case, we're going to be sneaky and just download the files and return
@@ -287,38 +289,38 @@ class TalusCodeImporter(object):
 		# THIS IS IMPORTANT, YES WE WANT TO RETURN NONE!!!
 		# see the comment in the docstring
 		return None
-# 	
+#
 # 	def load_module(self, abs_name, *args):
 # 		if abs_name in sys.modules:
 # 			mod = sys.modules[abs_name]
 # 		else:
 # 			mod = sys.modules.setdefault(abs_name, imp.new_module(abs_name))
-# 
+#
 # 		fp, pathname, desc = imp.find_module(abs_name)
-# 
+#
 # 		actual_path = pathname
 # 		if not actual_path.endswith(".py") and not actual_path.endswith(".pyc"):
 # 			actual_path = os.path.join(actual_path, "__init__.py")
-# 
+#
 # 		mod.__file__ = actual_path
 # 		mod.__name__ = abs_name
 # 		mod.__path__ = pathname
 # 		mod.__loader__ = self
 # 		mod.__package__ = ".".join(abs_name.split(".")[:-1])
-# 
+#
 # 		if actual_path.endswith("__init__.py") or actual_path.endswith("__init__.pyc"):
 # 			mod.__path__ = [ pathname ]
-# 
+#
 # 		data = open(actual_path, "rb").read()
 # 		if actual_path.endswith(".pyc"):
 # 			code = marshal.loads(data[8:])
 # 		else:
 # 			code = compile(data, actual_path, "exec")
-# 
+#
 # 		exec code in mod.__dict__
-# 
+#
 # 		return mod
-	
+
 	def download_module(self, abs_name):
 		"""Download the module found at ``abs_name`` from the talus git repository
 
@@ -343,7 +345,7 @@ class TalusCodeImporter(object):
 			return self._download_file(abs_name, info, self._code_dir)
 
 		return None
-	
+
 	def _download_folder(self, abs_name, info, dest, recurse=None):
 		"""Download the module (folder/__init__.py) from git. The module folder will
 		only be recursively downloaded if it is a subfolder of the tools/components/lib/packages
@@ -352,12 +354,12 @@ class TalusCodeImporter(object):
 		# if we're loading the root directory of a tool/component/library, recursively
 		# download everything in git in that folder
 		match = re.match(r'^talus\.(tools|packages|components|lib)\.[a-zA-Z_0-9]+$', abs_name)
-		
+
 		if recurse is None:
 			recurse = (match is not None)
 
 		self._download(dest, info=info, recurse=recurse)
-	
+
 	def install_requirements(self, rel_path):
 		self._log.info("installing requirements {}".format(rel_path))
 		full_path = os.path.join(self._code_dir, rel_path)
@@ -382,7 +384,7 @@ class TalusCodeImporter(object):
 			])
 		except SystemExit as e:
 			self._log.error("Could not install package. Sorry :^(")
-	
+
 	def install_package(self, package_name):
 		self._log.info("downloading package {} to local python index".format(package_name))
 		pinfo = self.cache["pypi"][package_name]
@@ -403,7 +405,7 @@ class TalusCodeImporter(object):
 				self.pypi_loc,
 			package_name
 		])
-	
+
 	def install_package_from_talus(self, package_name):
 		"""Install the package found in git at talus/package/<package_name>
 		"""
@@ -420,7 +422,7 @@ class TalusCodeImporter(object):
 			])
 		except SystemExit as e:
 			self._log.error("Could not install package from talus git. You dun goofed up somewhere")
-	
+
 	def _download_file(self, abs_name, info, dest):
 		"""Download the single file from git
 		"""
@@ -429,7 +431,7 @@ class TalusCodeImporter(object):
 		path = os.path.join(dest, info["filename"])
 		with open(path, "wb") as f:
 			f.write(base64.b64decode(info["contents"]))
-	
+
 	def _download(self, dest, path=None, info=None, recurse=False):
 		"""Download files/folders (maybe recursively) into ``self._code_dir``. If the path
 		is a directory, the directory's immediate children will be downloaded. If ``recurse``
@@ -470,7 +472,7 @@ class TalusCodeImporter(object):
 			if os.path.basename(info["filename"]) == "requirements.txt" and \
 					re.match(r'^(talus|talus/tools/[a-zA-Z_0-9]+|talus/components/[a-zA-Z_0-9]+)', os.path.dirname(info["filename"])) is not None:
 				self.install_requirements(base_path)
-	
+
 	def _git_show(self, path, ref="HEAD"):
 		"""Return the json object returned from the /code_cache on the web server
 
@@ -492,7 +494,7 @@ class TalusCodeImporter(object):
 			self._add_to_cache(path, items=res["items"])
 
 		return res
-	
+
 	def _add_to_cache(self, path, items=None):
 		cache = root = self.cache["git"]
 
@@ -502,7 +504,7 @@ class TalusCodeImporter(object):
 
 		for item in items:
 			cache["__items__"].add(item)
-	
+
 	def _module_in_git(self, modname):
 		parts = modname.split(".")
 
@@ -560,7 +562,7 @@ class TalusBootstrap(object):
 
 		self.dev = dev
 		self._host_comms = HostComms(self._on_host_msg_received, self._job_id, self._idx, self._tool, dev=dev)
-	
+
 	def sys_except_hook(self, type_, value, traceback):
 		formatted = traceback.format_exception(type_, value, traceback)
 
@@ -630,7 +632,7 @@ class TalusBootstrap(object):
 		self._host_comms.send_msg("finished", {})
 
 		self._shutdown()
-	
+
 	def _shutdown(self):
 		"""shutdown the vm"""
 		os_name = os.name.lower()
@@ -638,7 +640,7 @@ class TalusBootstrap(object):
 			os.system("shutdown /t 0 /s /f")
 		else:
 			os.system("shutdown -h now")
-	
+
 	def _on_host_msg_received(self, data):
 		"""Handle the data received from the host
 
@@ -646,7 +648,7 @@ class TalusBootstrap(object):
 		"""
 		self._log.info("received a message from the host: {}".format(data))
 		data = json.loads(data)
-	
+
 	def _on_progress(self, num):
 		"""Increment the progress count for this job by ``num``
 
@@ -655,7 +657,7 @@ class TalusBootstrap(object):
 		self._num_progresses += num
 		self._log.debug("progress incrementing by {}".format(num))
 		self._host_comms.send_msg("progress", num)
-	
+
 	def _on_result(self, result_type, result_data):
 		"""Append this to the results for this job
 
@@ -663,7 +665,7 @@ class TalusBootstrap(object):
 		"""
 		self._log.debug("sending result")
 		self._host_comms.send_msg("result", {"type": result_type, "data": result_data})
-	
+
 	def _install_code_importer(self):
 		"""Install the sys.meta_path finder/loader to automatically load modules from
 		the talus git repo.
